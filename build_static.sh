@@ -7,6 +7,7 @@ SOURCE_DIR="$BASE/sqlite"
 SQLITE_REPOSITORY="${SQLITE_REPOSITORY:-https://github.com/sqlite/sqlite.git}"
 CC="${CC:-cc}"
 AR="${AR:-ar}"
+MAKE="${MAKE:-make}"
 TCLSH="${TCLSH:-tclsh}"
 
 arch_dir() {
@@ -51,11 +52,13 @@ fi
 
 require_command "$CC"
 require_command "$AR"
+require_command "$MAKE"
 require_command "$TCLSH"
 
 (
     cd "$SOURCE_DIR"
-    "$TCLSH" tool/mksqlite3c.tcl
+    CC="$CC" ./configure --disable-tcl
+    "$MAKE" sqlite3.c
 )
 
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sqlite-static.XXXXXX")"

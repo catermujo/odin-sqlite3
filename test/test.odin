@@ -43,6 +43,18 @@ main :: proc() {
     ); result != .Ok {
         fmt.panicf("insert failed: {}", sqlite.last_error(db))
     }
+    if result := sqlite.execute(
+        db,
+        "INSERT INTO users (name, score, active, payload) VALUES (?, ?, ?, ?)",
+        {
+            {index = 1, value = ""},
+            {index = 2, value = f64(0)},
+            {index = 3, value = false},
+            {index = 4, value = []byte{}},
+        },
+    ); result != .Ok {
+        fmt.panicf("empty string insert failed: {}", sqlite.last_error(db))
+    }
 
     users: [dynamic]User
     if result := sqlite.query(
@@ -60,4 +72,18 @@ main :: proc() {
         delete(user.payload)
     }
     delete(users)
+
+    empty_users: [dynamic]User
+    if result := sqlite.query(
+        db,
+        &empty_users,
+        "SELECT name, score, active, payload FROM users WHERE name = ''",
+    ); result != .Ok || len(empty_users) != 1 || empty_users[0].name != "" {
+        fmt.panicf("empty string did not round trip as text: {}", sqlite.last_error(db))
+    }
+    for &user in empty_users {
+        delete(user.name)
+        delete(user.payload)
+    }
+    delete(empty_users)
 }

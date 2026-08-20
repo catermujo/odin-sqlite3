@@ -164,7 +164,11 @@ prepare :: proc(
             // Sqlite treats our parameter as a "cstring" if we pass a negative length.
             // Explicitly it's just a slice.
             // https://sqlite.org/c3ref/bind_blob.html.
-            raw.bind_text(stmt^, idx, raw_data(v), c.int(len(v)), raw.TRANSIENT) or_return
+            if len(v) == 0 {
+                raw.bind_text(stmt^, idx, raw_data(string("\x00")), 0, raw.TRANSIENT) or_return
+            } else {
+                raw.bind_text(stmt^, idx, raw_data(v), c.int(len(v)), raw.TRANSIENT) or_return
+            }
         } else {
             log.errorf("unhandled parameter type {}", param.value)
             return .Internal

@@ -16,19 +16,32 @@ Regex_Error :: union #shared_nil {
 
 @(private)
 match_and_return_capture :: proc(pattern: string, str: string) -> (string, Regex_Error) {
-    defer free_all(context.temp_allocator)
-    regexp, err := regex.create(pattern, permanent_allocator = context.temp_allocator)
+    // DUMBAI: The caller owns context.temp_allocator; clearing it here corrupts request state held in the same arena.
+    regexp, err := regex.create(pattern)
     if err != nil {
         return "", err
     }
+    defer regex.destroy(regexp)
 
-    capture, ok := regex.match_and_allocate_capture(regexp, str, context.temp_allocator)
+    capture, ok := regex.match_and_allocate_capture(regexp, str)
     if !ok {
         return "", .No_Capture
     }
+    defer regex.destroy(capture)
 
 
     return strings.clone(capture.groups[1]), nil
+}
+
+@(test)
+match_and_return_capture_preserves_caller_temporary_allocations :: proc(t: ^testing.T) {
+    marker := strings.clone("route-parameter", context.temp_allocator)
+    capture, err := match_and_return_capture(`\<(.*)\>`, "<hello world>")
+    defer delete(capture)
+    testing.expect(t, err == nil)
+    testing.expect_value(t, capture, "hello world")
+    for _ in 0 ..< 64 do _ = strings.clone("allocator churn", context.temp_allocator)
+    testing.expect_value(t, marker, "route-parameter")
 }
 
 @(test)

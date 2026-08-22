@@ -4,9 +4,11 @@ import "core:c"
 import "core:fmt"
 import "core:log"
 import "core:mem"
+import "core:mem/virtual"
 import "core:reflect"
 import "core:slice"
 import "core:strings"
+import "core:testing"
 
 import "raw"
 
@@ -38,17 +40,18 @@ query :: proc(
     out: ^[dynamic]$T,
     sql: string,
     params: []Query_Param = {},
+    result_allocator := context.allocator,
     loc := #caller_location,
 ) -> Result_Code {
     stmt: ^Statement
 
     prepare(db, &stmt, sql, params, loc) or_return
-    return read_all_rows(stmt, out)
+    return read_all_rows(stmt, out, result_allocator)
 }
 
 // Allocates. Make sure to free results even when the return value is not .Ok
 @(require_results)
-read_all_rows :: proc(stmt: ^Statement, out: ^[dynamic]$T) -> Result_Code {
+read_all_rows :: proc(stmt: ^Statement, out: ^[dynamic]$T, result_allocator := context.allocator) -> Result_Code {
     defer raw.finalize(stmt)
 
     fields, err := get_type_fields(T)
@@ -84,13 +87,17 @@ read_all_rows :: proc(stmt: ^Statement, out: ^[dynamic]$T) -> Result_Code {
                 return .Internal
             }
 
-            if field_err := write_struct_field_from_statement(&item, field_type, stmt, c.int(i)); field_err != nil {
+            if field_err := write_struct_field_from_statement(&item, field_type, stmt, c.int(i), result_allocator);
+               field_err != nil {
                 log.error(field_err)
                 free_query_error(field_err)
                 return .Internal
             }
         }
 
+        if cap(out^) == 0 {
+            out^ = make([dynamic]T, 0, result_allocator)
+        }
         append(out, item)
         status = raw.step(stmt)
     }
@@ -220,6 +227,7 @@ write_struct_field_from_statement :: proc(
     field: ^Field_Type,
     stmt: ^raw.Stmt,
     col_idx: c.int,
+    result_allocator := context.allocator,
 ) -> Query_Error {
     switch field.type.id {
     case typeid_of(string):
@@ -227,7 +235,7 @@ write_struct_field_from_statement :: proc(
         if text == nil {
             return fmt.tprintf("cannot read NULL into {}", field.type.id)
         }
-        value := strings.clone_from(text)
+        value := strings.clone_from(text, result_allocator)
         write_struct_field(obj, field^, value) or_return
 
     case typeid_of(bool):
@@ -284,7 +292,7 @@ write_struct_field_from_statement :: proc(
 
     case typeid_of([]byte):
         length := int(raw.column_bytes(stmt, col_idx))
-        value := make([]byte, length)
+        value := make([]byte, length, result_allocator)
         if length > 0 {
             mem.copy(raw_data(value), raw.column_blob(stmt, col_idx), length)
         }
@@ -318,4 +326,47 @@ write_struct_field_from_statement :: proc(
     }
 
     return nil
+}
+
+@(test)
+query_uses_explicit_result_allocator :: proc(t: ^testing.T) {
+    db, open_status := open_with_flags(":memory:", {.Read_Write, .Create, .Memory})
+    testing.expect_value(t, open_status, Result_Code.Ok)
+    if open_status != .Ok do return
+    defer close(db)
+
+    testing.expect_value(
+        t,
+        execute(db, "CREATE TABLE values_table (text_value TEXT, blob_value BLOB)"),
+        Result_Code.Ok,
+    )
+    testing.expect_value(
+        t,
+        execute(db, "INSERT INTO values_table VALUES (?, ?)", {{1, "owned text"}, {2, []byte{1, 2, 3}}}),
+        Result_Code.Ok,
+    )
+
+    result_arena: virtual.Arena
+    testing.expect(t, virtual.arena_init_growing(&result_arena) == nil)
+    defer virtual.arena_destroy(&result_arena)
+    result_allocator := virtual.arena_allocator(&result_arena)
+    rows: [dynamic]struct {
+        text_value: string `sqlite:"text_value"`,
+        blob_value: []byte `sqlite:"blob_value"`,
+    }
+    testing.expect_value(
+        t,
+        query(db, &rows, "SELECT text_value, blob_value FROM values_table", result_allocator = result_allocator),
+        Result_Code.Ok,
+    )
+    testing.expect_value(t, len(rows), 1)
+    if len(rows) == 1 {
+        testing.expect_value(t, rows[0].text_value, "owned text")
+        testing.expect_value(t, len(rows[0].blob_value), 3)
+        if len(rows[0].blob_value) == 3 {
+            testing.expect_value(t, rows[0].blob_value[0], u8(1))
+            testing.expect_value(t, rows[0].blob_value[1], u8(2))
+            testing.expect_value(t, rows[0].blob_value[2], u8(3))
+        }
+    }
 }

@@ -3,6 +3,8 @@
 setlocal
 
 if not defined SQLITE_REPOSITORY set "SQLITE_REPOSITORY=https://github.com/sqlite/sqlite.git"
+if not defined SQLITE_REVISION set "SQLITE_REVISION=version-3.45.1"
+if not defined SQLITE_COMMIT set "SQLITE_COMMIT=189e44dfecdc7868bb860dfb5d98eab371318c37"
 set "VENDOR_WINDOWS_ARCH=%VSCMD_ARG_TGT_ARCH%"
 if not defined VENDOR_WINDOWS_ARCH set "VENDOR_WINDOWS_ARCH=%PROCESSOR_ARCHITECTURE%"
 if /I "%VENDOR_WINDOWS_ARCH%"=="AMD64" set "VENDOR_WINDOWS_ARCH=x64"
@@ -26,9 +28,14 @@ where git >nul 2>&1 || (
     echo Missing required command: git 1>&2
     exit /b 1
 )
-git clone --depth 1 "%SQLITE_REPOSITORY%" "%SOURCE_DIR%" || exit /b 1
+git clone --depth 1 --branch "%SQLITE_REVISION%" "%SQLITE_REPOSITORY%" "%SOURCE_DIR%" || exit /b 1
 
 :source_ready
+for /f "delims=" %%I in ('git -C "%SOURCE_DIR%" rev-parse HEAD') do set "SOURCE_COMMIT=%%I"
+if /I not "%SOURCE_COMMIT%"=="%SQLITE_COMMIT%" (
+    echo SQLite source checkout does not match pinned commit: %SQLITE_COMMIT% 1>&2
+    exit /b 1
+)
 where nmake >nul 2>&1 || (
     echo Missing required command: nmake 1>&2
     exit /b 1
@@ -61,7 +68,7 @@ set "BUILD_DIR=%TEMP%\sqlite_shared_%VENDOR_WINDOWS_ARCH%_%RANDOM%"
 mkdir "%BUILD_DIR%" || exit /b 1
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
-cl /nologo /O2 /D"SQLITE_API=__declspec(dllexport)" /c "%SOURCE_DIR%\sqlite3.c" /Fo"%BUILD_DIR%\sqlite3.obj"
+cl /nologo /O2 /D"SQLITE_ENABLE_RTREE" /D"SQLITE_API=__declspec(dllexport)" /c "%SOURCE_DIR%\sqlite3.c" /Fo"%BUILD_DIR%\sqlite3.obj"
 if errorlevel 1 goto failed
 "%MSVC_LINK%" /DLL /NOLOGO /OUT:"%OUTPUT_DIR%\sqlite3.dll" /IMPLIB:"%OUTPUT_DIR%\sqlite3_shared.lib" "%BUILD_DIR%\sqlite3.obj"
 if errorlevel 1 goto failed

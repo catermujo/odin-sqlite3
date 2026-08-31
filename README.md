@@ -26,6 +26,38 @@ scripts clone the official `sqlite/sqlite` source into the ignored `sqlite/`
 checkout, generate the amalgamation there, and produce platform-specific
 artifacts. No SQLite C source is tracked in this repository.
 
+Native shared and static artifacts are built from SQLite tag `version-3.45.1`, commit
+`189e44dfecdc7868bb860dfb5d98eab371318c37`, with `SQLITE_ENABLE_RTREE`. The build scripts reject a source checkout
+whose commit differs from that pin. R*Tree support is therefore available for spatial indexes through SQLite's
+`rtree` virtual-table module in repository-built libraries; `SQLITE_LINK=system` depends on the host SQLite build.
+
+Run `build.sh` and `build_static.sh` on macOS or Linux, or `build.bat` and `build_static.bat` from an MSVC developer
+shell on Windows. Each script rebuilds only the current host architecture. Verify a rebuilt library with
+`sqlite_compileoption_used('ENABLE_RTREE')` and by creating and querying an `rtree` virtual table; a compile-option
+flag alone does not prove the module can execute.
+
+On macOS arm64, verify both locally tracked artifacts after rebuilding:
+
+```sh
+cc -O2 -I sqlite test/rtree.c darwin_arm64/sqlite3.darwin.a -o /tmp/sqlite-rtree-static
+/tmp/sqlite-rtree-static
+cc -O2 -I sqlite test/rtree.c darwin_arm64/libsqlite3.dylib \
+  -Wl,-rpath,"$PWD/darwin_arm64" -o /tmp/sqlite-rtree-shared
+/tmp/sqlite-rtree-shared
+```
+
+Both probes print `version=3045001 ENABLE_RTREE=1 query_count=1`. The tracked macOS arm64 rebuild from the pinned
+source has these
+SHA-256 digests:
+
+```text
+d8a2cc9993b1d7f35ad81431a6d04432ee4811b8733ea382996f047dbde0e310  darwin_arm64/libsqlite3.dylib
+de041b29f698173896ce36fe3c9642f97ead98e7042c5095168cd72d4226fe53  darwin_arm64/sqlite3.darwin.a
+```
+
+Linux and Windows artifacts require their respective hosts and are not claimed as rebuilt or verified by this
+macOS regeneration.
+
 ## WebAssembly runtime
 
 `wasm/` contains the unmodified official SQLite 3.45.1 (`3045001`) JavaScript/WASM distribution files required by

@@ -5,6 +5,8 @@ set -euo pipefail
 BASE="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$BASE/sqlite"
 SQLITE_REPOSITORY="${SQLITE_REPOSITORY:-https://github.com/sqlite/sqlite.git}"
+SQLITE_REVISION="${SQLITE_REVISION:-version-3.45.1}"
+SQLITE_COMMIT="${SQLITE_COMMIT:-189e44dfecdc7868bb860dfb5d98eab371318c37}"
 CC="${CC:-cc}"
 MAKE="${MAKE:-make}"
 TCLSH="${TCLSH:-tclsh}"
@@ -31,7 +33,12 @@ fi
 
 if [ ! -d "$SOURCE_DIR/.git" ]; then
     require_command git
-    git clone --depth 1 "$SQLITE_REPOSITORY" "$SOURCE_DIR"
+    git clone --depth 1 --branch "$SQLITE_REVISION" "$SQLITE_REPOSITORY" "$SOURCE_DIR"
+fi
+
+if [ "$(git -C "$SOURCE_DIR" rev-parse HEAD)" != "$SQLITE_COMMIT" ]; then
+    echo "SQLite source checkout does not match pinned commit: $SQLITE_COMMIT" >&2
+    exit 1
 fi
 
 require_command "$CC"
@@ -51,7 +58,7 @@ case "$(uname -s)" in
     Darwin)
         OUTPUT_DIR="$BASE/$(arch_dir darwin)"
         mkdir -p "$OUTPUT_DIR"
-        "$CC" -O2 -DNDEBUG -dynamiclib \
+        "$CC" -O2 -DNDEBUG -DSQLITE_ENABLE_RTREE -dynamiclib \
             "$SOURCE_DIR/sqlite3.c" \
             -Wl,-install_name,@rpath/libsqlite3.dylib \
             -o "$OUTPUT_DIR/libsqlite3.dylib"
@@ -59,7 +66,7 @@ case "$(uname -s)" in
     Linux)
         OUTPUT_DIR="$BASE/$(arch_dir linux)"
         mkdir -p "$OUTPUT_DIR"
-        "$CC" -O2 -DNDEBUG -fPIC -shared \
+        "$CC" -O2 -DNDEBUG -DSQLITE_ENABLE_RTREE -fPIC -shared \
             "$SOURCE_DIR/sqlite3.c" \
             -Wl,-soname,libsqlite3.so \
             -ldl -lpthread -lm \

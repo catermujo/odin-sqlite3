@@ -105,7 +105,6 @@ read_all_rows :: proc(stmt: ^Statement, out: ^[dynamic]$T, result_allocator := c
     return status == .Done ? .Ok : status
 }
 
-@(require_results)
 execute :: proc(db: ^Connection, sql: string, params: []Query_Param = {}, loc := #caller_location) -> Result_Code {
     if len(params) == 0 {
         return execute_script(db, sql)

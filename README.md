@@ -55,8 +55,15 @@ d8a2cc9993b1d7f35ad81431a6d04432ee4811b8733ea382996f047dbde0e310  darwin_arm64/l
 de041b29f698173896ce36fe3c9642f97ead98e7042c5095168cd72d4226fe53  darwin_arm64/sqlite3.darwin.a
 ```
 
-Linux and Windows artifacts require their respective hosts and are not claimed as rebuilt or verified by this
-macOS regeneration.
+The tracked Linux x64 static archive was rebuilt natively from the same pinned source and verified with both the
+R*Tree probe and an Odin `open_with_flags`/`close` round trip:
+
+```text
+3685e15e0caa4e3c56f122fbc0915951f763c8b0c49295af9f0cabdb25842bc8  linux_x64/sqlite3.linux.a
+```
+
+Other Linux and Windows artifacts require their respective hosts and are not claimed as rebuilt or verified by this
+regeneration.
 
 ## WebAssembly runtime
 
